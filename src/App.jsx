@@ -1,273 +1,326 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  ShoppingCart, Plus, Trash2, Edit, 
-  CheckCircle, Store, ArrowLeft, LogOut, User, 
-  Package, Truck, CheckSquare, XCircle
-} from 'lucide-react';
 
-const formatCurrency = (amount) => `KES ${Number(amount).toLocaleString()}`;
-
-const LS_PRODUCTS = "ruai_products";
-const LS_ORDERS = "ruai_orders";
-const LS_USERS = "ruai_users";
-const LS_USER = "ruai_current_user";
-
-const load = (key, fallback=[]) => JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
-const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
-
-const SEED_PRODUCTS = [
-  { id:"1", name:"Maize Flour (Unga 1kg)", price:130, category:"Grains", stock:50 },
-  { id:"2", name:"Bread (500g)", price:65, category:"Bakery", stock:20 },
-  { id:"3", name:"Milk (Fresh 1L)", price:130, category:"Dairy", stock:30 },
-  { id:"4", name:"Eggs (12 Pack)", price:230, category:"Poultry", stock:20 },
-  { id:"5", name:"Sukuma Wiki (1kg)", price:70, category:"Vegetables", stock:60 },
-  { id:"6", name:"Mandazi", price:10, category:"Snacks", stock:100 },
-  { id:"7", name:"Matchbox", price:15, category:"Household", stock:200 }
+const SEED_DATA = [
+  { id: 1, name: 'Premium Coffee Beans', price: 1200, category: 'Beverages', stock: 50, emoji: '☕' },
+  { id: 2, name: 'Organic Honey', price: 800, category: 'Pantry', stock: 30, emoji: '🍯' },
+  { id: 3, name: 'Whole Wheat Bread', price: 150, category: 'Bakery', stock: 20, emoji: '🍞' },
+  { id: 4, name: 'Fresh Avocados', price: 200, category: 'Produce', stock: 100, emoji: '🥑' },
 ];
 
-const Button = ({ children, onClick, type="button", className="", variant="primary" }) => {
-  const baseStyle = "px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors";
-  const variants = {
-    primary: "bg-emerald-600 text-white hover:bg-emerald-700",
-    secondary: "bg-gray-200 text-gray-800 hover:bg-gray-300",
-    danger: "bg-red-50 text-red-600 hover:bg-red-100",
-    outline: "border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-50"
-  };
-  return (
-    <button onClick={onClick} type={type} className={`${baseStyle} ${variants[variant]} ${className}`}>
-      {children}
-    </button>
-  );
-};
+const DELIVERY_FEE = 100;
 
-const Badge = ({ children, color="emerald" }) => {
-  const styles = {
-    emerald: "bg-emerald-100 text-emerald-700",
-    orange: "bg-orange-100 text-orange-700",
-    blue: "bg-blue-100 text-blue-700",
-    red: "bg-red-100 text-red-700",
-  };
-  return (
-    <span className={`${styles[color] || styles.emerald} text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider`}>
-      {children}
-    </span>
-  );
-};
+export default function App() {
+  // --- State Management (with LocalStorage) ---
+  const [view, setView] = useState('shop'); // shop, cart, history, admin
+  const [toast, setToast] = useState(null);
 
-export default function RuaiApp() {
-  const [products, setProducts] = useState(load(LS_PRODUCTS, []));
-  const [orders, setOrders] = useState(load(LS_ORDERS, []));
-  const [users, setUsers] = useState(load(LS_USERS, []));
-  const [user, setUser] = useState(load(LS_USER, null));
-  const [cart, setCart] = useState([]);
-  const [page, setPage] = useState("home");
-  const [notify, setNotify] = useState(null);
-  const [editingId, setEditingId] = useState(null);
-  const [adminTab, setAdminTab] = useState("inventory");
-  const [formData, setFormData] = useState({ name: '', category: '', price: '', stock: '' });
+  const [products, setProducts] = useState(() => {
+    return JSON.parse(localStorage.getItem('my_products')) || [];
+  });
+  const [cart, setCart] = useState(() => {
+    return JSON.parse(localStorage.getItem('my_cart')) || [];
+  });
+  const [orders, setOrders] = useState(() => {
+    return JSON.parse(localStorage.getItem('my_orders')) || [];
+  });
 
-  const toast = msg => { setNotify(msg); setTimeout(()=>setNotify(null), 2500); };
-
-  useEffect(()=>save(LS_PRODUCTS, products),[products]);
-  useEffect(()=>save(LS_ORDERS, orders),[orders]);
-  useEffect(()=>save(LS_USERS, users),[users]);
-  useEffect(()=>save(LS_USER, user),[user]);
-
-  const handleAuth = (e, isRegister) => {
-    e.preventDefault();
-    const email = e.target.email.value.trim().toLowerCase();
-    const password = e.target.pass.value;
-    if (isRegister) {
-      if (users.find(u=>u.email===email)) return toast("Account exists");
-      const role = users.length===0 ? "admin" : "customer";
-      const newUser = { id:Date.now().toString(), email, password, role };
-      setUsers(prev=>[...prev,newUser]);
-      setUser(newUser);
-      toast(role==="admin" ? "Admin account created" : "Account created");
-      setPage("home");
-    } else {
-      const found = users.find(u=>u.email===email && u.password===password);
-      if (!found) return toast("Invalid login");
-      setUser(found);
-      toast("Welcome back");
-      setPage("home");
-    }
-  };
-
-  const logout = () => { setUser(null); setPage("login"); };
-
-  const addToCart = p => {
-    setCart(prev=>{
-      const ex = prev.find(i=>i.id===p.id);
-      if (ex) return prev.map(i=>i.id===p.id ? {...i, quantity:i.quantity+1} : i);
-      return [...prev,{...p, quantity:1}];
-    });
-    toast(`Added ${p.name}`);
-  };
-
-  const cartSubtotal = cart.reduce((a,i)=>a+i.price*i.quantity,0);
-  const deliveryFee = 100;
-  const cartTotal = cartSubtotal + deliveryFee;
-
-  const checkout = e => {
-    e.preventDefault();
-    const order = {
-      id: Date.now().toString(),
-      userEmail: user.email,
-      items: cart,
-      total: cartTotal,
-      status:"Pending",
-      createdAt:new Date().toISOString(),
-      customerDetails: {
-        name: e.target.name.value,
-        phone: e.target.phone.value,
-        address: e.target.address.value
-      }
-    };
-    setOrders(prev=>[order,...prev]);
-    setCart([]);
-    setPage("orders");
-    toast("Order placed!");
-  };
+  // --- Persistence Effects ---
+  useEffect(() => {
+    localStorage.setItem('my_products', JSON.stringify(products));
+  }, [products]);
 
   useEffect(() => {
-    if (editingId) {
-      const p = products.find(x => x.id === editingId);
-      if (p) setFormData({ name: p.name, category: p.category, price: p.price, stock: p.stock });
-    } else {
-      setFormData({ name: '', category: '', price: '', stock: '' });
-    }
-  }, [editingId, products]);
+    localStorage.setItem('my_cart', JSON.stringify(cart));
+  }, [cart]);
 
-  const saveProduct = e => {
+  useEffect(() => {
+    localStorage.setItem('my_orders', JSON.stringify(orders));
+  }, [orders]);
+
+  // --- Helper Functions ---
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const addToCart = (product) => {
+    setCart([...cart, product]);
+    showToast(`Added ${product.name} to cart!`);
+  };
+
+  const seedStore = () => {
+    setProducts(SEED_DATA);
+    showToast('Store seeded with original products!');
+  };
+
+  const handleCheckout = () => {
+    if (cart.length === 0) return;
+    
+    const subtotal = cart.reduce((sum, item) => sum + item.price, 0);
+    const newOrder = {
+      id: Date.now(),
+      date: new Date().toLocaleDateString(),
+      items: cart,
+      subtotal: subtotal,
+      total: subtotal + DELIVERY_FEE,
+      status: 'Pending' // Pending -> Dispatched -> Delivered
+    };
+
+    setOrders([newOrder, ...orders]);
+    setCart([]);
+    showToast('Order placed successfully!');
+    setView('history');
+  };
+
+  // --- Admin Functions ---
+  const updateOrderStatus = (orderId, newStatus) => {
+    const updatedOrders = orders.map(o => 
+      o.id === orderId ? { ...o, status: newStatus } : o
+    );
+    setOrders(updatedOrders);
+    showToast(`Order status updated to ${newStatus}`);
+  };
+
+  const handleAddProduct = (e) => {
     e.preventDefault();
-    const p = { id: editingId || Date.now().toString(), ...formData, price: Number(formData.price), stock: Number(formData.stock) };
-    setProducts(prev => editingId ? prev.map(x => x.id === editingId ? p : x) : [...prev, p]);
-    setEditingId(null);
-    toast("Inventory updated");
+    const formData = new FormData(e.target);
+    const newProduct = {
+      id: Date.now(),
+      name: formData.get('name'),
+      price: Number(formData.get('price')),
+      category: formData.get('category'),
+      stock: Number(formData.get('stock')),
+      emoji: formData.get('emoji')
+    };
+    setProducts([...products, newProduct]);
+    e.target.reset();
+    showToast('New product added to inventory!');
   };
 
-  const updateOrderStatus = (id, newStatus) => {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
-    toast(`Status: ${newStatus}`);
-  };
-
-  const getStatusColor = (status) => {
-    if(status === "Delivered") return "emerald";
-    if(status === "Dispatched") return "blue";
-    if(status === "Cancelled") return "red";
-    return "orange";
-  };
-
-  const displayOrders = user?.role==="admin" ? orders : orders.filter(o=>o.userEmail===user?.email);
+  // --- Derived Admin Stats ---
+  const totalRevenue = orders
+    .filter(o => o.status === 'Delivered')
+    .reduce((sum, order) => sum + order.total, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 font-sans text-gray-900">
-      <div className="bg-white shadow sticky top-0 z-10 p-4 mb-6">
-        <div className="max-w-md mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={()=>setPage("home")}>
-            <Store className="text-emerald-600" />
-            <h1 className="font-black text-xl tracking-tight">RUAI FRESH</h1>
-          </div>
-          <div className="flex gap-4">
-            {user ? (
-               <div className="flex gap-3">
-                 <button className="relative" onClick={()=>setPage("cart")}>
-                   <ShoppingCart className="text-gray-600" />
-                   {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{cart.length}</span>}
-                 </button>
-                 <button onClick={()=>setPage("orders")}><User className="text-gray-600"/></button>
-                 {user.role==="admin" && <button onClick={()=>setPage("admin")} className="font-bold text-emerald-600">ADMIN</button>}
-                 <button onClick={logout}><LogOut className="text-gray-600"/></button>
-               </div>
-            ) : <button onClick={()=>setPage("login")} className="font-bold text-emerald-600">Login</button>}
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 text-gray-800 font-sans pb-20">
+      
+      {/* Navigation Bar */}
+      <nav className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-white/20 shadow-sm px-4 py-4">
+        <div className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-4">
+          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-indigo-600 cursor-pointer" onClick={() => setView('shop')}>
+            FreshMart KES
+          </h1>
+          <div className="flex space-x-2 overflow-x-auto pb-1 sm:pb-0">
+            <button onClick={() => setView('shop')} className={`px-4 py-2 rounded-full font-medium transition ${view === 'shop' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/50 hover:bg-white'}`}>Shop</button>
+            <button onClick={() => setView('cart')} className={`px-4 py-2 rounded-full font-medium transition ${view === 'cart' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/50 hover:bg-white'}`}>
+              Cart ({cart.length})
+            </button>
+            <button onClick={() => setView('history')} className={`px-4 py-2 rounded-full font-medium transition ${view === 'history' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white/50 hover:bg-white'}`}>Orders</button>
+            <button onClick={() => setView('admin')} className={`px-4 py-2 rounded-full font-medium transition ${view === 'admin' ? 'bg-gray-800 text-white shadow-md' : 'bg-white/50 hover:bg-white'}`}>Admin</button>
           </div>
         </div>
-      </div>
+      </nav>
 
-      <div className="max-w-md mx-auto px-4">
-        {notify && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-2"><CheckCircle size={16}/> {notify}</div>}
-
-        {page==="home" && (
-          <div className="grid grid-cols-2 gap-4">
-            {products.map(p=>(
-              <div key={p.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                <div><Badge color="emerald">{p.category}</Badge><h3 className="font-bold mt-2">{p.name}</h3></div>
-                <div className="flex justify-between items-center mt-4"><span className="font-bold">{formatCurrency(p.price)}</span>
-                <button onClick={()=>addToCart(p)} className="bg-emerald-100 text-emerald-700 p-2 rounded-full"><Plus size={20} /></button></div>
+      {/* Main Content Area */}
+      <main className="max-w-6xl mx-auto p-4 mt-6">
+        
+        {/* --- SHOP VIEW --- */}
+        {view === 'shop' && (
+          <div className="animate-fade-in">
+            <h2 className="text-3xl font-bold mb-6 text-gray-800">Our Products</h2>
+            {products.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-gray-500 mb-4">No products available yet.</p>
               </div>
-            ))}
-            {products.length === 0 && <Button onClick={()=>setProducts(SEED_PRODUCTS)} variant="outline" className="col-span-2">Seed Products</Button>}
-          </div>
-        )}
-
-        {page==="cart" && (
-          <div>
-            <Button onClick={()=>setPage("home")} variant="secondary" className="mb-4"><ArrowLeft size={16}/> Shop</Button>
-            <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-              {cart.map(i=>(<div key={i.id} className="flex justify-between mb-2"><span>{i.name} x{i.quantity}</span><span>{formatCurrency(i.price*i.quantity)}</span></div>))}
-              <div className="border-t pt-2 mt-2 font-bold flex justify-between"><span>Total (+ Delivery)</span><span>{formatCurrency(cartTotal)}</span></div>
-            </div>
-            <form onSubmit={checkout} className="space-y-3">
-              <input required name="name" placeholder="Name" className="border p-3 rounded-lg w-full"/>
-              <input required name="phone" placeholder="Phone" className="border p-3 rounded-lg w-full"/>
-              <input required name="address" placeholder="Address" className="border p-3 rounded-lg w-full"/>
-              <Button type="submit" className="w-full">Confirm Order</Button>
-            </form>
-          </div>
-        )}
-
-        {page==="orders" && (
-          <div>
-            <h2 className="font-bold text-xl mb-4">My Orders</h2>
-            {displayOrders.map(o=>(
-              <div key={o.id} className="bg-white p-4 rounded-xl shadow-sm mb-4">
-                <div className="flex justify-between mb-2"><span>Order #{o.id.slice(-5)}</span><Badge color={getStatusColor(o.status)}>{o.status}</Badge></div>
-                <div className="font-bold">{formatCurrency(o.total)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {page==="admin" && user?.role==="admin" && (
-          <div>
-            <div className="flex p-1 bg-gray-200 rounded-lg mb-6">
-              <button onClick={() => setAdminTab('inventory')} className={`flex-1 py-2 rounded ${adminTab === 'inventory' ? 'bg-white shadow' : ''}`}>Inventory</button>
-              <button onClick={() => setAdminTab('orders')} className={`flex-1 py-2 rounded ${adminTab === 'orders' ? 'bg-white shadow' : ''}`}>Orders</button>
-            </div>
-            {adminTab === 'inventory' ? (
-              <form onSubmit={saveProduct} className="bg-white p-4 rounded-xl shadow mb-6 space-y-3">
-                <input value={formData.name} onChange={e=>setFormData({...formData, name:e.target.value})} placeholder="Name" className="border p-2 w-full" required/>
-                <input value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} type="number" placeholder="Price" className="border p-2 w-full" required/>
-                <Button type="submit" className="w-full">{editingId ? "Update" : "Add"}</Button>
-              </form>
             ) : (
-              orders.map(o => (
-                <div key={o.id} className="bg-white p-4 rounded-xl shadow mb-4">
-                  <div className="flex justify-between items-center">
-                    <div><div className="font-bold">{o.customerDetails?.name}</div><div className="text-xs">{o.status}</div></div>
-                    <select value={o.status} onChange={(e) => updateOrderStatus(o.id, e.target.value)} className="border p-1 rounded">
-                      <option value="Pending">Pending</option>
-                      <option value="Dispatched">Dispatched</option>
-                      <option value="Delivered">Delivered</option>
-                    </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {products.map(p => (
+                  <div key={p.id} className="bg-white/40 backdrop-blur-lg border border-white/40 shadow-xl rounded-2xl p-6 flex flex-col items-center hover:-translate-y-1 transition duration-300">
+                    <span className="text-6xl mb-4">{p.emoji}</span>
+                    <h3 className="text-xl font-semibold text-center">{p.name}</h3>
+                    <p className="text-sm text-gray-500 mb-2">{p.category}</p>
+                    <p className="text-lg font-bold text-indigo-600 mb-4">KES {p.price}</p>
+                    <button 
+                      onClick={() => addToCart(p)}
+                      className="mt-auto w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl font-medium transition shadow-md"
+                    >
+                      Add to Cart
+                    </button>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
         )}
 
-        {(page==="login" || page==="register") && (
-          <form onSubmit={(e)=>handleAuth(e, page==="register")} className="space-y-4 bg-white p-6 rounded-xl shadow-sm mt-10">
-            <h1 className="font-black text-2xl text-center">RUAI FRESH</h1>
-            <input required name="email" type="email" placeholder="Email" className="border p-3 rounded-lg w-full"/>
-            <input required name="pass" type="password" placeholder="Password" className="border p-3 rounded-lg w-full"/>
-            <Button type="submit" className="w-full">{page==="login" ? "Sign In" : "Register"}</Button>
-            <button type="button" onClick={()=>setPage(page==="login"?"register":"login")} className="w-full text-sm text-emerald-600">Switch Login/Register</button>
-          </form>
+        {/* --- CART VIEW --- */}
+        {view === 'cart' && (
+          <div className="max-w-2xl mx-auto animate-fade-in">
+            <h2 className="text-3xl font-bold mb-6">Review Cart</h2>
+            <div className="bg-white/60 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/40">
+              {cart.length === 0 ? (
+                <p className="text-gray-500 text-center py-6">Your cart is empty.</p>
+              ) : (
+                <>
+                  <ul className="divide-y divide-gray-200/50 mb-6">
+                    {cart.map((item, index) => (
+                      <li key={index} className="py-4 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{item.emoji}</span>
+                          <span className="font-medium">{item.name}</span>
+                        </div>
+                        <span className="font-bold text-gray-700">KES {item.price}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-t border-gray-300 pt-4 space-y-2">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal:</span>
+                      <span>KES {cart.reduce((sum, item) => sum + item.price, 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Delivery Fee:</span>
+                      <span>KES {DELIVERY_FEE}</span>
+                    </div>
+                    <div className="flex justify-between text-xl font-bold text-gray-800 pt-2">
+                      <span>Total:</span>
+                      <span>KES {cart.reduce((sum, item) => sum + item.price, 0) + DELIVERY_FEE}</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleCheckout}
+                    className="w-full mt-8 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold text-lg transition shadow-lg"
+                  >
+                    Confirm & Checkout
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         )}
-      </div>
+
+        {/* --- ORDER HISTORY VIEW --- */}
+        {view === 'history' && (
+          <div className="max-w-3xl mx-auto animate-fade-in">
+            <h2 className="text-3xl font-bold mb-6">Your Orders</h2>
+            {orders.length === 0 ? (
+              <p className="text-gray-500 text-center bg-white/40 p-8 rounded-2xl">No orders placed yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {orders.map(order => (
+                  <div key={order.id} className="bg-white/60 backdrop-blur-md rounded-2xl p-6 shadow-md border border-white/40">
+                    <div className="flex justify-between items-center border-b border-gray-200/50 pb-3 mb-3">
+                      <div>
+                        <p className="text-sm text-gray-500">Order #{order.id}</p>
+                        <p className="text-xs text-gray-400">{order.date}</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold 
+                        ${order.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' : 
+                          order.status === 'Dispatched' ? 'bg-blue-100 text-blue-700' : 
+                          'bg-green-100 text-green-700'}`}>
+                        {order.status}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-2">
+                      {order.items.length} items (incl. KES {DELIVERY_FEE} delivery)
+                    </p>
+                    <p className="font-bold text-lg text-gray-800">Total: KES {order.total}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- ADMIN DASHBOARD --- */}
+        {view === 'admin' && (
+          <div className="animate-fade-in">
+            <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+              <h2 className="text-3xl font-bold">Admin Dashboard</h2>
+              <button onClick={seedStore} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow-md transition">
+                🌱 Seed Store Data
+              </button>
+            </div>
+
+            {/* Sales Tracker */}
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-xl mb-8">
+              <h3 className="text-lg font-medium opacity-90">Total Delivered Revenue</h3>
+              <p className="text-4xl font-bold mt-2">KES {totalRevenue.toLocaleString()}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Order Management */}
+              <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 shadow-lg border border-white/40">
+                <h3 className="text-xl font-bold mb-4">Manage Orders</h3>
+                {orders.length === 0 ? <p className="text-gray-500">No orders yet.</p> : (
+                  <div className="space-y-4">
+                    {orders.map(order => (
+                      <div key={order.id} className="bg-white/80 rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                        <div>
+                          <p className="font-medium">Order #{order.id}</p>
+                          <p className="text-sm text-gray-500">KES {order.total}</p>
+                        </div>
+                        <select 
+                          value={order.status}
+                          onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                          className="bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2"
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Dispatched">Dispatched</option>
+                          <option value="Delivered">Delivered</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Advanced Inventory Form */}
+              <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 shadow-lg border border-white/40">
+                <h3 className="text-xl font-bold mb-4">Add New Product</h3>
+                <form onSubmit={handleAddProduct} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                      <input name="name" type="text" required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. Mangoes" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Emoji</label>
+                      <input name="emoji" type="text" required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="🥭" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Price (KES)</label>
+                      <input name="price" type="number" required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="100" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Stock Count</label>
+                      <input name="stock" type="number" required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="50" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <input name="category" type="text" required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Produce" />
+                  </div>
+                  <button type="submit" className="w-full bg-gray-800 hover:bg-gray-900 text-white py-2 rounded-lg font-medium transition shadow-md">
+                    Add Product to Inventory
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 bg-gray-900/90 backdrop-blur-sm text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce">
+          <span>✨</span>
+          <span className="font-medium">{toast}</span>
+        </div>
+      )}
     </div>
   );
 }
